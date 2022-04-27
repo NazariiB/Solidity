@@ -1,98 +1,68 @@
-//  SPDX-License-Identifier: <SPDX-License>
-pragma solidity >=0.7.0 <0.9.0;
+// contracts/ExampleToken.sol
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.5.0;
 
+import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v2.5.0/contracts/ownership/Ownable.sol";
+import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v2.5.0/contracts/math/SafeMath.sol";
+import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v2.5.0/contracts/lifecycle/Pausable.sol";
 
-
-// при деплої контракту потрібно внести певну суму на рахунок контракту, щоб потім з того рахунку знімалися гроші тим хто пререміг
-contract Storage {
-    address payable private owner;
-
-    // режими гри: ONE-вгадай 1 число 
-    // ODD- вгадай не парне
-    // EVEN- вгадай парне число
-    // PAIR- вгадай пару(1,2 або 3,4 або 5,6)
-    enum GameMode {ONE, ODD, EVEN, PAIR}
-    mapping(address =>uint256) private playersAccount;
-
-    constructor()payable{
-        owner = payable(msg.sender);
-    }
-
-// приймає 2 режима гри ONE і PAIR
-// чомусь не працює коректно
-    function play(uint8 number, GameMode gameMode)external payable hasMoney addPlayer(msg.sender){
-        require(number > 0 && number < 7, "incorect number");
+contract Game is Ownable, Pausable {
+    using SafeMath for uint256;
+    using SafeMath for uint8;
+    enum GameMode { ONE, ODD, EVEN, PAIR}
+    mapping (address => uint256) private players;
+    uint8 private upper = 6;
+    
+    function play( uint8 number, GameMode gameMode )external payable hasMoney whenNotPaused returns(uint8, bool){
+        require(number > 0 && number <= upper, "incorect number");
         uint8 randNumber = randomNuber();
-        if(gameMode == GameMode.ONE){
-            if(randNumber == number){
-                playersAccount[msg.sender] *= 6;
-            }else{
-                playersAccount[msg.sender] = 1;
-            }
-        }else if(gameMode == GameMode.PAIR){
-            if((number % 2 == 0? number : number + 1) == (randNumber % 2 == 0? randNumber : randNumber + 1)){
-                playersAccount[msg.sender] *= 3;
-            }else{
-                playersAccount[msg.sender] = 1;
-            }
+        bool win = false;
+        if(gameMode == GameMode.ONE && randNumber == number){
+            players[msg.sender].add(uint256(msg.value).mul(6));
+            win = true;
+        }else if(gameMode == GameMode.PAIR &&
+         (number.mod(2) == 0 ? number : number.add(1)) == (randNumber.mod(2) == 0 ? randNumber : randNumber.add(1))){
+            players[msg.sender] = players[msg.sender].add(uint256(msg.value).mul(3));
+            win = true;
+        }else if(gameMode == GameMode.ODD && randNumber.mod(2) != 0){
+            players[msg.sender] = players[msg.sender].add(uint256(msg.value).mul(2));
+            win = true;
+        }else if(gameMode == GameMode.EVEN && randNumber.mod(2) == 0){
+            players[msg.sender] = players[msg.sender].add(uint256(msg.value).mul(2));
+            win = true;
+        }else if(players[msg.sender] != 0) {
+            delete players[msg.sender];
         }
+        return(randNumber, win);
     }
 
-// приймає 2 режими гри ODD і EVEN
-    function playOddEven(GameMode gameMode)external payable hasMoney addPlayer(msg.sender){
-        uint8 randNumber = randomNuber();
-        if(gameMode == GameMode.ODD){
-            if(randNumber % 2 != 0){
-                playersAccount[msg.sender] *= 2;
-            }else{
-                playersAccount[msg.sender] = 1;
-            }
-        }else if(gameMode == GameMode.EVEN){
-            if(randNumber % 2 == 0){
-                playersAccount[msg.sender] *= 2;
-            }else{
-                playersAccount[msg.sender] = 1;
-            }
-        }
+    function checkMoney()public view returns(uint256) {
+        return players[msg.sender];
     }
 
-// перевірка балансу
-    function checkMoney(address ad)public view returns(uint256){
-        return playersAccount[ad] - 1;
-    }
-
-// зняття з балансу
-    function withdrawCash()external payable{
-        if(playersAccount[msg.sender] > 1){
-            payable(msg.sender).transfer(playersAccount[msg.sender]);
-            playersAccount[msg.sender] = 1;
+    function withdrawCash()external whenNotPaused {
+        if(players[msg.sender] != 0){
+            msg.sender.transfer(players[msg.sender]);
+            players[msg.sender] = 0;
         }else{
-            revert("you have no money");
+            revert("you have no maney");
         }
-    }
-
-// зупиняє контракт і надсилає гроші власнику контракту
-    function stopContract()external{
-        selfdestruct(owner);
-    }
-
-// генерує рандомні числа від 1 до 6
-    function randomNuber()private view returns(uint8){
-        return uint8(uint256(keccak256(abi.encodePacked(msg.sender, block.timestamp))) % 6) + 1;
-    }
-
-//  добавляє гравця в гру
-    modifier addPlayer(address ad){
-        if(playersAccount[ad] == 0 || playersAccount[ad] == 1){
-            playersAccount[ad] = msg.value;
-        }
-        _;
-    }
-
-//  перевіряє чи гравець має необхідну суму
-    modifier hasMoney(){
-        require(msg.value > .001 ether || playersAccount[msg.sender] != 1, "you have no maney");
-        _;
     }
     
+    function randomNuber()private view returns(uint8){
+        return uint8(uint256(keccak256(abi.encodePacked(msg.sender, block.timestamp))).mod(upper)) + 1;
+    }
+
+    function setUpper(uint8 up) public onlyOwner {
+        upper = up;
+    }
+
+    function getUpper() public view returns(uint8){
+        return upper;
+    }
+
+    modifier hasMoney(){
+        require(msg.value > 0.1 ether, "you have no maney");
+        _;
+    }
 }
