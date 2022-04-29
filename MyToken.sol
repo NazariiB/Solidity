@@ -41,4 +41,8 @@ contract MyToken is ERC20{
         _totalSupply -= amount;
         emit Transfer(address(0), ad, amount);
     }
+
+    function balanceOf(address account) public view override returns (uint256) {
+        return _balances[account];
+    }
 }
