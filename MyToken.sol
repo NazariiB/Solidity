@@ -1,48 +1,55 @@
 pragma solidity 0.8.13;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/utils/Context.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
 
-contract MyToken is ERC20{
+contract MyToken is Context, ERC20, AccessControl {
 
-    mapping(address => uint256) private _balances;
+    bytes32 private ADMIN = keccak256("ADMIN");
+    bytes32 private USER = keccak256("USER");
 
-    uint256 private _totalSupply = 10000;
-
-    string private _name = "MyToken";
-
-    string private _symbol = "MTK";
-
-    uint8 private decimal = 18;
-
-    address private owner;
-
-    constructor() ERC20("MyToken", "MTK") { 
-        owner = msg.sender;
+    constructor(string memory name, string memory symbol) ERC20(name, symbol) {
+        _grantRole(ADMIN, _msgSender());
     }
 
-    function transfer(address to, uint256 amount)public override returns(bool) {
-        require(amount < 100, "you can transfer only below 100 tokens");
-        _balances[msg.sender] -= amount;
-        _balances[to] += amount;
-        emit Transfer(msg.sender, to, amount);
-        return true;
+// you can't transfer over 100 tokens if you are an user
+// you can transfer a lot tokens if you are an admin
+    function transfer(address to, uint256 amount) public virtual override returns(bool) {
+        bool res = false;
+        if(hasRole(ADMIN, _msgSender())){
+            _transfer(_msgSender(), to, amount);
+            res = true;
+        }else if(hasRole(USER, _msgSender())){
+            require(amount < 100, "you can't transfer over 100 tokens");
+            _transfer(_msgSender(), to, amount);
+            res = true;
+        }else {
+            revert("you have no role");
+        }
+        return res;
     }
 
-    function mint(address ad,uint amount) external {
-        require(ad == owner, "you are not an owner");
-        _balances[ad] += amount;
-        _totalSupply += amount;
-        emit Transfer(address(0), ad, amount);
+// user can mint if user have more than 1000 tokens
+// admin can mint
+    function mint(address account, uint256 amount)public virtual {
+        if(hasRole(ADMIN, _msgSender())) {
+            _mint(account, amount);
+        }else if(hasRole(USER, _msgSender())) {
+            require(balanceOf(_msgSender()) > 1000, "you do not have enough tokens");
+            _mint(account, amount);
+        }else {
+            revert("you have no role");
+        }
     }
 
-    function burn(address ad, uint amount) external {
-        require(_balances[ad] > 1000, "you dont have enough tokens");
-        _balances[ad] -= amount;
-        _totalSupply -= amount;
-        emit Transfer(address(0), ad, amount);
+// only admin can burn
+    function burn(address account, uint256 amount) public virtual onlyRole(ADMIN) {
+        _burn(account, amount);
     }
 
-    function balanceOf(address account) public view override returns (uint256) {
-        return _balances[account];
+// only admin can add an account a role
+    function grantRole(bytes32 role, address account)public virtual override onlyRole(ADMIN){
+        _grantRole(role, account);
     }
 }
